@@ -321,8 +321,11 @@ fi
 if [ "x$INSTALL_BCM5701" = "xYES" ]
 then
     case $SVPL_BUILD in
-    20A5323*)
-        echo 'Installing Catalina AppleBCM5701Ethernet.kext'
+    20A4*)
+        # skip this on Big Sur dev beta 1 and 2
+        ;;
+    *)
+        echo 'Installing 20A4300b AppleBCM5701Ethernet.kext'
         pushd IONetworkingFamily.kext/Contents/Plugins > /dev/null
 
         if [ -d AppleBCM5701Ethernet.kext.original ]
@@ -337,8 +340,6 @@ then
         chmod -R 755 AppleBCM5701Ethernet.kext
 
         popd > /dev/null
-        ;;
-    *)
         ;;
     esac
 fi
