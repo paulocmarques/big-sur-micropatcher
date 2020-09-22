@@ -1,5 +1,5 @@
 #!/bin/bash
-VERSIONNUM="0.0.20"
+VERSIONNUM="0.1.0"
 VERSION="BarryKN Big Sur Micropatcher Unpatcher v$VERSIONNUM"
 
 echo $VERSION
@@ -59,7 +59,7 @@ then
     mv "$VOLUME/System/Library/CoreServices/PlatformSupport.plist.inactive" \
        "$VOLUME/System/Library/CoreServices/PlatformSupport.plist"
 else
-    echo 'Boot-time compatibility check not present; continuing.'
+    echo 'Boot-time compatibility check patch not present; continuing.'
 fi
 
 echo
