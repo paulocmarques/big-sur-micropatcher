@@ -17,6 +17,12 @@ ecrr() {
 # as root.
 [ $UID = 0 ] || exec sudo --preserve-env=SHELL "$0" "$@"
 
+if [ "x$1" = "x--force" ]
+then
+    FORCE=YES
+    shift
+fi
+
 IMGVOL="/Volumes/Image Volume"
 if [ -d "$IMGVOL" ]
 then
@@ -24,27 +30,24 @@ then
 else
     RECOVERY="NO"
 
-    # While we're at it, we need to check SIP & authenticated-root
-    # (both need to be disabled)
-    if ! csrutil status | grep -q 'disabled.$'
+    # Outside the recovery environment, we need to check SIP &
+    # authenticated-root (both need to be disabled)
+    if [ "x$FORCE" != "xYES" ]
     then
-        MUSTEXIT="YES"
-        >&2 csrutil status
-    fi
-
-    if ! csrutil authenticated-root status | grep -q 'disabled$'
-    then
-        MUSTEXIT="YES"
-        >&2 csrutil authenticated-root status
-    fi
-
-    if [ "x$MUSTEXIT" = "xYES" ]
-    then
-        ecrr "Please boot from the patched Big Sur installer USB and run the"
-        ecrr "following command in Terminal to fix this:"
-        ecrr "/Volumes/Image\ Volume/set-vars.sh"
-        ecrr "(or boot from the installer USB and fix it yourself)"
-        exit 1
+        CSRVAL="`nvram csr-active-config|sed -e 's/^.*	//'`"
+        case $CSRVAL in
+        w%0[89f]* | %[7f]f%0[89f]*)
+            ;;
+        *)
+            ecrr csr-active-config appears to be set incorrectly:
+            >&2 nvram csr-active-config
+            ecrr
+            ecrr "To fix this, please boot the setvars EFI utility, then boot back into macOS"
+            ecrr "and try again. Or if you believe you are seeing this message in error, try the"
+            ecrr '`--force` command line option.'
+            exit 1
+            ;;
+        esac
     fi
 fi
 
@@ -129,7 +132,10 @@ then
     ecrr 'Mounted device is an actual volume, not a snapshot. Proceeding.'
 else
     WASSNAPSHOT="YES"
-    VOLUME=`mktemp -d`
+    #VOLUME=`mktemp -d`
+    # Use the same mountpoint as Apple's own updaters. This is probably
+    # more user-friendly than something randomly generated with mktemp.
+    VOLUME=/System/Volumes/Update/mnt1
     ecrr "Mounted device is a snapshot. Will now mount underlying volume"
     ecrr "from device $POPSLICE at temporary mountpoint:"
     ecrr "$VOLUME"
@@ -168,10 +174,11 @@ fi
 #echo export WASSNAPSHOT=\""$WASSNAPSHOT"\"\;
 #echo export VOLUME=\""$VOLUME"\"\;
 
-export RECOVERY WASSNAPSHOT VOLUME
+export RECOVERY WASSNAPSHOT VOLUME SVPL_BUILD
 echo RECOVERY=\""$RECOVERY"\"\;
 echo WASSNAPSHOT=\""$WASSNAPSHOT"\"\;
 echo VOLUME=\""$VOLUME"\"\;
+echo SVPL_BUILD=\""$SVPL_BUILD"\"\;
 echo
 
 if [ -z "$SHELL" ]

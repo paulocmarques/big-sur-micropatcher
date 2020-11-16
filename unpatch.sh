@@ -1,37 +1,45 @@
 #!/bin/bash
-VERSIONNUM="0.1.0"
-VERSION="BarryKN Big Sur Micropatcher Unpatcher v$VERSIONNUM"
-
-echo $VERSION
-# Add a blank line of output to make things easier on the eyes.
+echo 'Unpatcher starting. If this fails, try recreating the installer USB using'
+echo 'createinstallmedia.'
 echo
 
-# Add disclaimer
-echo "It's really best to recreate the USB stick using createinstallmedia,"
-echo "but this takes much less time and is useful for patcher development."
-echo
+# Check for --no-sync option
+if [ "x$1" = "x--no-sync" ]
+then
+    SKIP_SYNC="YES"
+    shift
+fi
 
 # Allow the user to drag-and-drop the USB stick in Terminal, to specify the
-# path to the USB stick in question. (Otherwise it will try a hardcoded path
-# for beta 2 and up, followed by a hardcoded path for beta 1.)
+# path to the USB stick in question. (Otherwise it will try hardcoded paths
+# for a presumed Big Sur Golden Master/public release, beta 2-or-later,
+# and beta 1, in that order.)
 if [ -z "$1" ]
 then
-    VOLUME='/Volumes/Install macOS Big Sur Beta'
-    if [ ! -d "$VOLUME/Install macOS Big Sur Beta.app" ]
-    then
-        # Check for beta 1 before giving up
-        VOLUME='/Volumes/Install macOS Beta'
-        if [ ! -d "$VOLUME/Install macOS Beta.app" ]
+    for x in "Install macOS Big Sur" "Install macOS Big Sur Beta" "Install macOS Beta"
+    do
+        if [ -d "/Volumes/$x/$x.app" ]
         then
-            echo "Failed to locate Big Sur recovery USB stick for unpatching."
-            echo
-            echo "Unpatcher cannot continue and will now exit."
-            exit 1
+            VOLUME="/Volumes/$x"
+            APPPATH="$VOLUME/$x.app"
+            break
         fi
+    done
+
+    if [ ! -d "$APPPATH" ]
+    then
+        echo "Failed to locate Big Sur recovery USB stick for unpatching."
+        echo "If all else fails, try specifying the path to the USB stick"
+        echo "as a command line parameter to this script."
+        echo
+        echo "Unpatcher cannot continue and will now exit."
+        exit 1
     fi
 else
     VOLUME="$1"
-    if [ ! -d "$VOLUME/Install macOS"*.app ]
+    # The use of `echo` here is to force globbing.
+    APPPATH=`echo -n "$VOLUME"/Install\ macOS*.app`
+    if [ ! -d "$APPPATH" ]
     then
         echo "Failed to locate Big Sur recovery USB stick for unpatching."
         echo "Make sure you specified the correct volume. You may also try"
@@ -76,22 +84,44 @@ else
 fi
 
 echo
-echo 'Removing kexts, shell scripts, and patcher version info.'
+if [ -d "$APPPATH/Contents/MacOS/InstallAssistant.app" ]
+then
+    echo 'Removing trampoline.'
+    TEMPAPP="$VOLUME/tmp.app"
+    mv -f "$APPPATH/Contents/MacOS/InstallAssistant.app" "$TEMPAPP"
+    rm -rf "$APPPATH"
+    mv -f "$TEMPAPP" "$APPPATH"
+else
+    echo 'Looked for trampoline (v0.2.0+) but trampoline is not present. Continuing...'
+fi
+
+echo 'Removing kexts, shell scripts, patcher version info, etc.'
 # For v0.0.9 and earlier
 rm -rf "$VOLUME"/*.kext
+rm -f "$VOLUME"/*.kext.zip
 # For v0.0.10 and later
 rm -rf "$VOLUME"/kexts
-rm -f "$VOLUME"/*.kext.zip "$VOLUME"/*.sh "$VOLUME/Patch-Version.txt"
+# For v0.3.3 and later
+rm -f "$VOLUME"/kmutil*
+# For v0.4.2 and later
+rm -f "$VOLUME"/bless*
+# For v0.4.5pre
+rm -f "$VOLUME"/patch.*
+# For v0.5.0 and later
+rm -rf "$VOLUME"/bin
+# For all versions
+rm -f "$VOLUME"/*.sh "$VOLUME/Patch-Version.txt"
 
-# Now that the patcher is going to add the dylib itself, go ahead and
-# remove that too.
 echo 'Remvoing Hax dylibs...'
 rm -f "$VOLUME"/Hax*.dylib
 rm -rf "$VOLUME"/Hax*.app
 
-echo
-echo 'Syncing.'
-sync
+if [ "x$SKIP_SYNC" != "xYES" ]
+then
+    echo
+    echo 'Syncing.'
+    sync
+fi
 
 echo
 echo 'Unpatcher finished.'

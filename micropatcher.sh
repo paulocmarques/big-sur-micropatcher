@@ -1,5 +1,5 @@
 #!/bin/bash
-VERSIONNUM="0.1.0"
+VERSIONNUM=0.5.1
 VERSION="BarryKN Big Sur Micropatcher v$VERSIONNUM"
 
 ### begin function definitions ###
@@ -52,29 +52,36 @@ then
 fi
 
 # Allow the user to drag-and-drop the USB stick in Terminal, to specify the
-# path to the USB stick in question. (Otherwise it will try a hardcoded path
-# for beta 2 and up, followed by a hardcoded path for beta 1.)
+# path to the USB stick in question. (Otherwise it will try hardcoded paths
+# for a presumed Big Sur Golden Master/public release, beta 2-or-later,
+# and beta 1, in that order.)
 if [ -z "$1" ]
 then
-    VOLUME='/Volumes/Install macOS Big Sur Beta'
-    if [ ! -d "$VOLUME/Install macOS Big Sur Beta.app" ]
-    then
-        # Check for beta 1 before giving up
-        VOLUME='/Volumes/Install macOS Beta'
-        if [ ! -d "$VOLUME/Install macOS Beta.app" ]
+    for x in "Install macOS Big Sur" "Install macOS Big Sur Beta" "Install macOS Beta"
+    do
+        if [ -d "/Volumes/$x/$x.app" ]
         then
-            echo "Failed to locate Big Sur recovery USB stick."
-            echo Remember to create it using createinstallmedia, and do not rename it.
-            echo "If all else fails, try specifying the path to the USB stick"
-            echo "as a command line parameter to this script."
-            echo
-            echo "Patcher cannot continue and will now exit."
-            exit 1
+            VOLUME="/Volumes/$x"
+            APPPATH="$VOLUME/$x.app"
+            break
         fi
+    done
+
+    if [ ! -d "$APPPATH" ]
+    then
+        echo "Failed to locate Big Sur recovery USB stick."
+        echo "Remember to create it using createinstallmedia, and do not rename it."
+        echo "If all else fails, try specifying the path to the USB stick"
+        echo "as a command line parameter to this script."
+        echo
+        echo "Patcher cannot continue and will now exit."
+        exit 1
     fi
 else
     VOLUME="$1"
-    if [ ! -d "$VOLUME/Install macOS"*.app ]
+    # The use of `echo` here is to force globbing.
+    APPPATH=`echo -n "$VOLUME"/Install\ macOS*.app`
+    if [ ! -d "$APPPATH" ]
     then
         echo "Failed to locate Big Sur recovery USB stick for patching."
         echo "Make sure you specified the correct volume. You may also try"
@@ -137,12 +144,16 @@ fi
 
 if [ -e "$VOLUME/Patch-Version.txt" ]
 then
-    echo "Cannot patch a USB stick which has already been patched."
-    echo "Ideally run createinstallmedia again, or at least run unpatch.sh"
-    echo "first."
-    echo
-    echo "Patcher cannot continue and will now exit."
-    exit 1
+     echo "USB stick has already been patched. Running unpatch.sh to remove the"
+     echo "existing patches before continuing."
+     echo
+     if ./unpatch.sh --no-sync "$VOLUME"
+     then
+         echo 'Patcher is now continuing.'
+     else
+         echo 'Unpatcher failed. Patcher cannot continue.'
+         exit 1
+     fi
 fi
 
 
@@ -156,22 +167,36 @@ then
 fi
 cat payloads/com.apple.Boot.plist > "$VOLUME/Library/Preferences/SystemConfiguration/com.apple.Boot.plist"
 
+# Add the trampoline.
+echo 'Installing trampoline...'
+TEMPAPP="$VOLUME/tmp.app"
+mv -f "$APPPATH" "$TEMPAPP"
+cp -r payloads/trampoline.app "$APPPATH"
+mv -f "$TEMPAPP" "$APPPATH/Contents/MacOS/InstallAssistant.app"
+cp "$APPPATH/Contents/MacOS/InstallAssistant" "$APPPATH/Contents/MacOS/InstallAssistant_plain"
+cp "$APPPATH/Contents/MacOS/InstallAssistant" "$APPPATH/Contents/MacOS/InstallAssistant_springboard"
+pushd "$APPPATH/Contents" > /dev/null
+for item in `cd MacOS/InstallAssistant.app/Contents;ls -1 | fgrep -v MacOS`
+do
+    ln -s MacOS/InstallAssistant.app/Contents/$item .
+done
+popd > /dev/null
+touch "$APPPATH"
+
 # Copy the shell scripts into place so that they may be used once the
 # USB stick is booted.
-echo 'Adding shell scripts...'
+echo 'Copying shell scripts...'
 cp -f payloads/*.sh "$VOLUME"
 
 # Copy Hax dylibs into place
 echo "Adding Hax dylibs..."
 cp -f payloads/ASentientBot-Hax/BarryKN-fork/Hax*.dylib "$VOLUME"
 
-# Let's play it safe and ensure the shell scripts are executable.
-chmod u+x "$VOLUME"/*.sh
-# Same for the dylibs
-chmod u+x "$VOLUME"/Hax*.dylib
+echo 'Adding kexts and other binaries...'
+cp -rf payloads/kexts payloads/bin "$VOLUME"
 
-echo 'Adding kexts...'
-cp -rf payloads/kexts "$VOLUME"
+# Let's play it safe and ensure the shell scripts, dylibs, etc. are executable.
+chmod -R u+x "$VOLUME"/*.sh "$VOLUME"/Hax*.dylib "$VOLUME"/bin
 
 # Save a file onto the USB stick that says what patcher & version was used,
 # so it can be identified later (e.g. for troubleshooting purposes).
